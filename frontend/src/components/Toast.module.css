@@ -1,0 +1,44 @@
+.container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 200;
+  max-width: min(90vw, 400px);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.message {
+  flex: 1;
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.success {
+  background-color: #16a34a;
+}
+
+.error {
+  background-color: #dc2626;
+}
+
+.close {
+  font-size: 1.2rem;
+  line-height: 1;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.85;
+}

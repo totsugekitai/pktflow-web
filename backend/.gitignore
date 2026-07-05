@@ -1,0 +1,6 @@
+# Compiled server binary
+/server
+/bin/
+
+# Test / coverage output
+*.out

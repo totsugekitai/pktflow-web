@@ -1,0 +1,47 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.row {
+  display: flex;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+  /* Let the field shrink below its input's intrinsic width so the row of
+     number inputs doesn't overflow the form. */
+  min-width: 0;
+}
+
+.label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.input {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  /* Fill the field and include padding in the width so three inputs fit the row. */
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  outline: 2px solid #93c5fd;
+  outline-offset: 0;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}

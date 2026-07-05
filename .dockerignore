@@ -1,0 +1,19 @@
+# Build artifacts and deps are re-created inside the image.
+**/node_modules
+**/dist
+**/dist-ssr
+
+# VCS, editor, and local files.
+.git
+.gitignore
+.claude
+.vscode
+.idea
+**/*.log
+**/.DS_Store
+
+# Docs and container config aren't needed in the build context.
+**/README.md
+Dockerfile
+.dockerignore
+docker-compose.yml

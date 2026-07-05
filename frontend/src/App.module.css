@@ -1,0 +1,32 @@
+.app {
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  background-color: #111827;
+  color: #f9fafb;
+}
+
+.brand {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #fff;
+  font-family: var(--mono);
+}
+
+.subtitle {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}

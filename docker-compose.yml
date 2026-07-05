@@ -1,0 +1,14 @@
+services:
+  pktflow-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pktflow-web
+    container_name: pktflow-web
+    # Host networking lets the backend reach the pktflow daemon on
+    # 127.0.0.1:7878 and exposes the UI on the host's :8080 directly.
+    network_mode: host
+    environment:
+      PKTFLOW_WEB_ADDR: ":8080"
+      PKTFLOW_DAEMON_ADDR: "http://127.0.0.1:7878"
+    restart: unless-stopped
