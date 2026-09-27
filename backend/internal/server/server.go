@@ -1,8 +1,8 @@
 // Package server wires the HTTP routes exposed to the pktflow-web frontend.
 //
 // The frontend talks only to this backend. Host management is served locally;
-// per-port operations are forwarded verbatim to the selected host's pktflow
-// daemon, which owns all port state.
+// Open Traffic Generator (OTG) API calls are forwarded verbatim to the selected
+// host's pktflow daemon, which owns all port, flow, and capture state.
 package server
 
 import (
@@ -52,20 +52,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/hosts", s.handleAddHost)
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.handleRemoveHost)
 
-	// Port operations are forwarded to the selected host's daemon.
+	// Open Traffic Generator (OTG) endpoints are forwarded to the selected
+	// host's daemon under the same path.
 	for _, pattern := range []string{
-		"GET /api/hosts/{id}/ports",
-		"POST /api/hosts/{id}/ports",
-		"DELETE /api/hosts/{id}/ports/{pci}",
-		"PUT /api/hosts/{id}/ports/{pci}/mode",
-		"POST /api/hosts/{id}/ports/{pci}/tx/start",
-		"POST /api/hosts/{id}/ports/{pci}/tx/stop",
-		"POST /api/hosts/{id}/ports/{pci}/rx/start",
-		"POST /api/hosts/{id}/ports/{pci}/rx/stop",
-		"POST /api/hosts/{id}/ports/{pci}/pcap/start",
-		"POST /api/hosts/{id}/ports/{pci}/pcap/stop",
-		"GET /api/hosts/{id}/ports/{pci}/pcap",
-		"GET /api/hosts/{id}/ports/{pci}/stats",
+		"GET /api/hosts/{id}/config",
+		"POST /api/hosts/{id}/config",
+		"POST /api/hosts/{id}/control/state",
+		"POST /api/hosts/{id}/monitor/metrics",
+		"POST /api/hosts/{id}/monitor/capture",
+		"GET /api/hosts/{id}/capabilities/version",
 	} {
 		mux.HandleFunc(pattern, s.proxyToDaemon)
 	}

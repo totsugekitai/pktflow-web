@@ -1,7 +1,11 @@
 /**
- * Types mirroring the pktflow-web backend API (which in turn mirrors the
- * pktflow daemon REST API). See `pktflow/doc/daemon_api.md` and the Go backend
- * under `backend/`.
+ * Types mirroring the pktflow-web backend API. Host management is served by the
+ * Go backend itself; everything else is the subset of the Open Traffic
+ * Generator (OTG) REST API the pktflow daemon implements, forwarded verbatim
+ * (see `pktflow/src/daemon/otg/model.rs` and `pktflow/TODO.md`).
+ *
+ * The daemon serializes absent optional fields as `null`, so every optional
+ * field read back from it is typed `T | null` as well as optional.
  */
 
 /**
@@ -21,131 +25,229 @@ export interface AddHostRequest {
   address: string
 }
 
-/** Which task kinds a port permits. */
-export interface PortMode {
-  tx: boolean
-  rx: boolean
-  pcap: boolean
-}
-
-/** Which tasks are currently running on a port. */
-export interface RunningStatus {
-  tx: boolean
-  rx: boolean
-  pcap: boolean
-}
-
-/** One entry of `GET /ports`. */
-export interface PortStatus {
-  pci: string
-  /** NIC link state: `true` when up, `false` when down, `null` if unreadable. */
-  link_up: boolean | null
-  mode: PortMode
-  running: RunningStatus
-  /** A finished capture is available for download. */
-  pcap_ready: boolean
-}
+// ---------------------------------------------------------------------------
+// Config (POST/GET /config)
+// ---------------------------------------------------------------------------
 
 /**
- * NIC hardware counters (`rte_eth_stats`), accumulated since the port started.
- * The NIC counts everything it receives, so `rx_missed`/`rx_errors` can grow
- * even while the Rx worker is stopped.
+ * A test port. `location` is pktflow-specific: `"<pci>"` or
+ * `"<pci>?rxq=N&txq=N&rxd=N"` (see `otg/location.ts`).
  */
-export interface HwStats {
-  rx_packets: number
-  tx_packets: number
-  rx_bytes: number
-  tx_bytes: number
-  rx_missed: number
-  rx_errors: number
-  tx_errors: number
-  rx_nombuf: number
+export interface Port {
+  name: string
+  location: string
 }
+
+/** A capture target. pktflow only supports the `pcapng` format. */
+export interface Capture {
+  name: string
+  port_names: string[]
+  format?: 'pcapng'
+  /** Accepted but ignored by pktflow. */
+  filters?: unknown[]
+}
+
+export interface PatternCounter<S> {
+  start: S
+  step: S
+  /** Length of the cycle (default 1). */
+  count?: number | null
+}
+
+export interface PatternRandom<S> {
+  min: S
+  max: S
+  /** 0 (the default) asks for a non-deterministic sequence. */
+  seed?: number | null
+  /** Length of the cycle (default 1). */
+  count?: number | null
+}
+
+export type PatternChoice = 'value' | 'values' | 'increment' | 'decrement' | 'random'
 
 /**
- * Software counters tallied by the worker, accumulated since the port was added
- * and preserved across tx/rx start/stop. Counts only frames the worker handled.
+ * An OTG `Pattern.*` object for one header field. `S` is the wire scalar:
+ * a string for MAC/IPv4/IPv6 fields, a number for integer fields.
  */
-export interface SwStats {
-  tx_frames: number
-  tx_bytes: number
-  rx_frames: number
-  rx_bytes: number
+export interface Pattern<S> {
+  choice?: PatternChoice
+  value?: S | null
+  values?: S[] | null
+  increment?: PatternCounter<S> | null
+  decrement?: PatternCounter<S> | null
+  random?: PatternRandom<S> | null
 }
 
-/** Body of `GET /ports/<pci>/stats`. */
-export interface PortStats {
-  pci: string
-  hw: HwStats
-  sw: SwStats
+export interface EthernetHeader {
+  dst?: Pattern<string> | null
+  src?: Pattern<string> | null
 }
 
-/**
- * Body of `POST /ports`. `rxq`/`txq` default to 1, `rxd` (descriptors per rx
- * queue) to 1024, `mode` to all-enabled.
- */
-export interface AddPortRequest {
-  pci: string
-  rxq?: number
-  txq?: number
-  /** Number of descriptors in each rx queue's ring (default 1024). */
-  rxd?: number
-  mode?: PortMode
+export interface VlanHeader {
+  id?: Pattern<number> | null
 }
 
-export type Protocol = 'ipv4' | 'ipv6' | 'arp'
-export type ArpOp = 'request' | 'reply'
-
-/** Fields shared by every transmit stream, regardless of protocol. */
-interface StreamBase {
-  src_mac: string
-  dst_mac: string
-  src_ip: string
-  dst_ip: string
-  /** VLAN VID (< 4096). Omit for untagged. */
-  vlan?: number
-  /** Frames to send (default 1, min 1). */
-  count?: number
-  /** Payload bytes (default 64, max 1500). */
-  payload_len?: number
-  /**
-   * Transmit rate in frames per second. Mutually exclusive with `rate_mbps`;
-   * omit both to send at full speed.
-   */
-  rate_pps?: number
-  /**
-   * Transmit rate in Mbps of the L2 frame (FCS/preamble/IFG excluded, decimals
-   * allowed). Mutually exclusive with `rate_pps`; omit both for full speed.
-   */
-  rate_mbps?: number
+export interface Ipv4Header {
+  src?: Pattern<string> | null
+  dst?: Pattern<string> | null
+  time_to_live?: Pattern<number> | null
+  protocol?: Pattern<number> | null
 }
 
-export interface Ipv4Stream extends StreamBase {
-  protocol: 'ipv4'
-  /** Default 64. */
-  ttl?: number
-  /** IP protocol number of the (absent) L4 header. Default 253. */
-  l4_protocol?: number
+export interface Ipv6Header {
+  src?: Pattern<string> | null
+  dst?: Pattern<string> | null
+  hop_limit?: Pattern<number> | null
+  next_header?: Pattern<number> | null
 }
 
-export interface Ipv6Stream extends StreamBase {
-  protocol: 'ipv6'
-  /** Default 64. */
-  hop_limit?: number
-  /** Next-header value. Default 253. */
-  l4_protocol?: number
+export interface ArpHeader {
+  operation?: Pattern<number> | null
+  sender_protocol_addr?: Pattern<string> | null
+  target_protocol_addr?: Pattern<string> | null
 }
 
-export interface ArpStream extends StreamBase {
-  protocol: 'arp'
-  /** Default "request". */
-  arp_op?: ArpOp
+export type HeaderChoice = 'ethernet' | 'vlan' | 'ipv4' | 'ipv6' | 'arp'
+
+/** One `Flow.packet[]` entry: a `choice` tag plus the matching header. */
+export interface Header {
+  choice: HeaderChoice
+  ethernet?: EthernetHeader | null
+  vlan?: VlanHeader | null
+  ipv4?: Ipv4Header | null
+  ipv6?: Ipv6Header | null
+  arp?: ArpHeader | null
 }
 
-/** A single `[[tx.streams]]` entry, discriminated by `protocol`. */
-export type Stream = Ipv4Stream | Ipv6Stream | ArpStream
+export interface FlowPort {
+  tx_name: string
+  rx_names: string[]
+}
 
-/** Body of `POST /ports/<pci>/tx/start`. */
-export interface TxStartRequest {
-  streams: Stream[]
+export interface TxRx {
+  choice: 'port'
+  port: FlowPort | null
+}
+
+/** Frame size. pktflow only supports `fixed` (bytes, FCS included; default 64). */
+export interface Size {
+  choice: 'fixed'
+  fixed?: number | null
+}
+
+export type RateChoice = 'pps' | 'bps' | 'kbps' | 'mbps' | 'gbps'
+
+/** Transmit rate. When the whole `Flow.rate` is absent, pktflow sends at full speed. */
+export interface Rate {
+  choice: RateChoice
+  pps?: number | null
+  bps?: number | null
+  kbps?: number | null
+  mbps?: number | null
+  gbps?: number | null
+}
+
+export type DurationChoice = 'continuous' | 'fixed_packets'
+
+export interface Duration {
+  choice: DurationChoice
+  fixed_packets?: { packets: number } | null
+}
+
+export interface Flow {
+  name: string
+  tx_rx: TxRx
+  packet: Header[]
+  size?: Size | null
+  rate?: Rate | null
+  duration?: Duration | null
+}
+
+/** The whole daemon configuration; `POST /config` replaces it atomically. */
+export interface Config {
+  ports: Port[]
+  captures: Capture[]
+  flows: Flow[]
+}
+
+/** Success body of state-changing OTG calls. */
+export interface WarningResponse {
+  warnings: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Control (POST /control/state)
+// ---------------------------------------------------------------------------
+
+export type LinkState = 'up' | 'down'
+export type CaptureState = 'start' | 'stop'
+export type TransmitState = 'start' | 'stop'
+
+export type ControlState =
+  | {
+      choice: 'port'
+      port:
+        | { choice: 'link'; link: { port_names: string[]; state: LinkState } }
+        | { choice: 'capture'; capture: { port_names: string[]; state: CaptureState } }
+    }
+  | {
+      choice: 'traffic'
+      traffic: {
+        choice: 'flow_transmit'
+        flow_transmit: { flow_names: string[]; state: TransmitState }
+      }
+    }
+
+// ---------------------------------------------------------------------------
+// Monitor (POST /monitor/metrics, POST /monitor/capture)
+// ---------------------------------------------------------------------------
+
+/** An empty name list selects every port / flow. */
+export type MetricsRequest =
+  | { choice: 'port'; port: { port_names: string[] } }
+  | { choice: 'flow'; flow: { flow_names: string[] } }
+
+export type RunState = 'started' | 'stopped'
+
+/** Software counters of one port; rates are per second since the previous poll. */
+export interface PortMetric {
+  name: string
+  location: string
+  link: 'up' | 'down'
+  capture: RunState
+  transmit: RunState
+  frames_tx: number
+  frames_rx: number
+  bytes_tx: number
+  bytes_rx: number
+  frames_tx_rate: number
+  frames_rx_rate: number
+  bytes_tx_rate: number
+  bytes_rx_rate: number
+}
+
+/** Per-flow counters. Rx-side fields are always 0 in pktflow (not implemented). */
+export interface FlowMetric {
+  name: string
+  port_tx: string
+  port_rx: string
+  transmit: RunState
+  frames_tx: number
+  frames_rx: number
+  bytes_tx: number
+  bytes_rx: number
+  frames_tx_rate: number
+  frames_rx_rate: number
+  loss: number
+}
+
+export interface MetricsResponse {
+  choice: 'port_metrics' | 'flow_metrics'
+  port_metrics?: PortMetric[]
+  flow_metrics?: FlowMetric[]
+}
+
+/** Body of `POST /monitor/capture`; the response is the pcapng bytes. */
+export interface CaptureRequest {
+  port_name: string
 }

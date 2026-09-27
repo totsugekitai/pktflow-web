@@ -45,3 +45,9 @@
   display: flex;
   justify-content: flex-end;
 }
+
+.note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #6b7280;
+}

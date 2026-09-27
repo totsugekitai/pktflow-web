@@ -1,6 +1,6 @@
 // Command server is the pktflow-web backend. It sits between the browser UI
 // and the pktflow daemon: it manages the set of daemon hosts the UI can target
-// and forwards per-port operations to the selected host's daemon.
+// and forwards Open Traffic Generator (OTG) API calls to the selected host's daemon.
 package main
 
 import (

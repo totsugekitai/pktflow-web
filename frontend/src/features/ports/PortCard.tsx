@@ -1,47 +1,54 @@
-import { useState } from 'react'
-import type { PortStatus } from '../../api/types.ts'
+import type { Port, PortMetric } from '../../api/types.ts'
 import { Badge } from '../../components/Badge.tsx'
 import { Button } from '../../components/Button.tsx'
-import { Modal } from '../../components/Modal.tsx'
+import { formatCount, formatRate } from '../../components/format.ts'
+import { MetricGrid, type MetricRow } from '../../components/MetricGrid.tsx'
+import { parseLocation } from '../../otg/location.ts'
 import {
-  useDownloadPcap,
+  useDownloadCapture,
   useRemovePort,
-  useStartPcap,
-  useStartRx,
-  useStopPcap,
-  useStopRx,
-  useStopTx,
+  useSetLink,
+  useStartCapture,
+  useStopCapture,
 } from './hooks.ts'
-import { ModeEditor } from './ModeEditor.tsx'
-import { StatsPanel } from './StatsPanel.tsx'
-import { TxStreamBuilder } from './TxStreamBuilder.tsx'
 import styles from './PortCard.module.css'
 
 export interface PortCardProps {
-  port: PortStatus
+  port: Port
+  /** Absent until the first metrics poll includes this port. */
+  metric: PortMetric | undefined
 }
 
-type OpenModal = 'mode' | 'tx' | null
+function metricRows(m: PortMetric): MetricRow[] {
+  return [
+    ['frames_tx', formatCount(m.frames_tx)],
+    ['frames_rx', formatCount(m.frames_rx)],
+    ['bytes_tx', formatCount(m.bytes_tx)],
+    ['bytes_rx', formatCount(m.bytes_rx)],
+    ['frames_tx_rate', formatRate(m.frames_tx_rate)],
+    ['frames_rx_rate', formatRate(m.frames_rx_rate)],
+    ['bytes_tx_rate', formatRate(m.bytes_tx_rate)],
+    ['bytes_rx_rate', formatRate(m.bytes_rx_rate)],
+  ]
+}
 
-export function PortCard({ port }: PortCardProps) {
-  const { pci, link_up, mode, running, pcap_ready } = port
-  const [openModal, setOpenModal] = useState<OpenModal>(null)
-  const [showStats, setShowStats] = useState(false)
+export function PortCard({ port, metric }: PortCardProps) {
+  const { name } = port
+  const location = parseLocation(port.location)
 
+  const link = metric?.link
   const linkDotClass =
-    link_up === true ? styles.linkUp : link_up === false ? styles.linkDown : styles.linkUnknown
+    link === 'up' ? styles.linkUp : link === 'down' ? styles.linkDown : styles.linkUnknown
   const linkLabel =
-    link_up === true ? 'Link up' : link_up === false ? 'Link down' : 'Link status unknown'
+    link === 'up' ? 'Link up' : link === 'down' ? 'Link down' : 'Link status unknown'
+  const capturing = metric?.capture === 'started'
+  const transmitting = metric?.transmit === 'started'
 
   const removePort = useRemovePort()
-  const startRx = useStartRx()
-  const stopRx = useStopRx()
-  const startPcap = useStartPcap()
-  const stopPcap = useStopPcap()
-  const stopTx = useStopTx()
-  const downloadPcap = useDownloadPcap()
-
-  const anyRunning = running.tx || running.rx || running.pcap
+  const setLink = useSetLink()
+  const startCapture = useStartCapture()
+  const stopCapture = useStopCapture()
+  const downloadCapture = useDownloadCapture()
 
   return (
     <article className={styles.card}>
@@ -53,100 +60,73 @@ export function PortCard({ port }: PortCardProps) {
             aria-label={linkLabel}
             title={linkLabel}
           />
-          <h3 className={styles.pci}>{pci}</h3>
+          <h3 className={styles.name}>{name}</h3>
+          <span className={styles.pci}>{location.pci}</span>
         </div>
         <Button
           variant="danger"
-          disabled={anyRunning || removePort.isPending}
-          onClick={() => removePort.mutate(pci)}
+          disabled={transmitting || capturing || removePort.isPending}
+          title={transmitting || capturing ? 'Stop Tx and capture before deleting' : undefined}
+          onClick={() => removePort.mutate(name)}
         >
           Delete
         </Button>
       </header>
 
-      <div className={styles.badges}>
-        <span className={styles.badgeLabel}>Mode</span>
-        <Badge tone={mode.tx ? 'on' : 'off'}>tx</Badge>
-        <Badge tone={mode.rx ? 'on' : 'off'}>rx</Badge>
-        <Badge tone={mode.pcap ? 'on' : 'off'}>pcap</Badge>
-      </div>
+      <p className={styles.queues}>
+        rxq {location.rxq} · txq {location.txq} · rxd {location.rxd}
+      </p>
 
       <div className={styles.badges}>
-        <span className={styles.badgeLabel}>Running</span>
-        <Badge tone={running.tx ? 'on' : 'off'}>tx</Badge>
-        <Badge tone={running.rx ? 'on' : 'off'}>rx</Badge>
-        <Badge tone={running.pcap ? 'on' : 'off'}>pcap</Badge>
-        {pcap_ready && <Badge tone="ready">pcap ready</Badge>}
+        <span className={styles.badgeLabel}>State</span>
+        <Badge tone={transmitting ? 'on' : 'off'}>tx</Badge>
+        <Badge tone={capturing ? 'on' : 'off'}>capture</Badge>
       </div>
+
+      {metric && <MetricGrid rows={metricRows(metric)} />}
 
       <div className={styles.controls}>
-        {running.tx ? (
-          <Button variant="secondary" disabled={stopTx.isPending} onClick={() => stopTx.mutate(pci)}>
-            Stop Tx
-          </Button>
-        ) : (
-          <Button disabled={!mode.tx} onClick={() => setOpenModal('tx')}>
-            Start Tx…
-          </Button>
-        )}
-
-        {running.rx ? (
-          <Button variant="secondary" disabled={stopRx.isPending} onClick={() => stopRx.mutate(pci)}>
-            Stop Rx
-          </Button>
-        ) : (
-          <Button disabled={!mode.rx || startRx.isPending} onClick={() => startRx.mutate(pci)}>
-            Start Rx
-          </Button>
-        )}
-
-        {running.pcap ? (
+        {link === 'up' ? (
           <Button
             variant="secondary"
-            disabled={stopPcap.isPending}
-            onClick={() => stopPcap.mutate(pci)}
+            disabled={setLink.isPending}
+            onClick={() => setLink.mutate({ name, up: false })}
+          >
+            Link down
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            disabled={setLink.isPending}
+            onClick={() => setLink.mutate({ name, up: true })}
+          >
+            Link up
+          </Button>
+        )}
+
+        {capturing ? (
+          <Button
+            variant="secondary"
+            disabled={stopCapture.isPending}
+            onClick={() => stopCapture.mutate(name)}
           >
             Stop Capture
           </Button>
         ) : (
-          <Button disabled={!mode.pcap || startPcap.isPending} onClick={() => startPcap.mutate(pci)}>
+          <Button disabled={startCapture.isPending} onClick={() => startCapture.mutate(name)}>
             Start Capture
           </Button>
         )}
 
         <Button
           variant="secondary"
-          disabled={!pcap_ready || downloadPcap.isPending}
-          onClick={() => downloadPcap.mutate(pci)}
+          disabled={downloadCapture.isPending}
+          title={capturing ? 'Stops the running capture and downloads it' : undefined}
+          onClick={() => downloadCapture.mutate(name)}
         >
           Download pcap
         </Button>
-
-        <Button variant="secondary" disabled={anyRunning} onClick={() => setOpenModal('mode')}>
-          Edit mode
-        </Button>
-
-        <Button
-          variant="secondary"
-          aria-expanded={showStats}
-          onClick={() => setShowStats((v) => !v)}
-        >
-          {showStats ? 'Hide stats' : 'Show stats'}
-        </Button>
       </div>
-
-      {showStats && <StatsPanel pci={pci} />}
-
-      {openModal === 'tx' && (
-        <Modal title={`Start Tx — ${pci}`} onClose={() => setOpenModal(null)}>
-          <TxStreamBuilder pci={pci} onDone={() => setOpenModal(null)} />
-        </Modal>
-      )}
-      {openModal === 'mode' && (
-        <Modal title={`Edit mode — ${pci}`} onClose={() => setOpenModal(null)}>
-          <ModeEditor pci={pci} initialMode={mode} onDone={() => setOpenModal(null)} />
-        </Modal>
-      )}
     </article>
   )
 }

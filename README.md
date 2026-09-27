@@ -86,8 +86,9 @@ Configuration (environment variables):
 
 ### Endpoints
 
-All application routes are served under `/api`. Errors use the daemon-compatible
-`{"error": "..."}` shape.
+All application routes are served under `/api`. Errors raised by the backend
+itself use the `{"error": "..."}` shape; errors from the daemon are passed through
+in the OTG `{"code", "kind", "errors": [...]}` shape.
 
 **Health**
 
@@ -104,21 +105,18 @@ built-in `local` host is seeded at startup and cannot be removed.
 | POST   | `/api/hosts`       | Add a host. Body `{label, address}`; returns the created host (201). |
 | DELETE | `/api/hosts/{id}`  | Remove a host (204). The built-in `local` host is rejected (400).  |
 
-**Ports** — forwarded verbatim to the selected host's daemon, which owns all port
-state. `{pci}` is the port's PCI address (e.g. `0000:02:00.0`). See the daemon
-REST API at `pktflow/doc/daemon_api.md` for request and
-response bodies.
+**Open Traffic Generator (OTG)** — forwarded verbatim to the selected host's
+daemon, which implements a subset of the
+[OTG REST API](https://github.com/open-traffic-generator/models) and owns all
+port, flow, and capture state. `/api/hosts/{id}/<path>` maps to the daemon's
+`<path>`. See `pktflow/src/daemon/otg/model.rs` for the supported fields and
+`pktflow/TODO.md` for the parts of the spec that are not implemented.
 
-| Method | Path                                        | Description                          |
-| ------ | ------------------------------------------- | ------------------------------------ |
-| GET    | `/api/hosts/{id}/ports`                     | List the host's ports.               |
-| POST   | `/api/hosts/{id}/ports`                     | Add a port.                          |
-| DELETE | `/api/hosts/{id}/ports/{pci}`               | Remove a port.                       |
-| PUT    | `/api/hosts/{id}/ports/{pci}/mode`          | Change the port mode.                |
-| POST   | `/api/hosts/{id}/ports/{pci}/tx/start`      | Start transmit.                      |
-| POST   | `/api/hosts/{id}/ports/{pci}/tx/stop`       | Stop transmit.                       |
-| POST   | `/api/hosts/{id}/ports/{pci}/rx/start`      | Start receive.                       |
-| POST   | `/api/hosts/{id}/ports/{pci}/rx/stop`       | Stop receive.                        |
-| POST   | `/api/hosts/{id}/ports/{pci}/pcap/start`    | Start capture.                       |
-| POST   | `/api/hosts/{id}/ports/{pci}/pcap/stop`     | Stop capture.                        |
-| GET    | `/api/hosts/{id}/ports/{pci}/pcap`          | Download the finished capture (binary). |
+| Method | Path                                      | Description                                                   |
+| ------ | ----------------------------------------- | ------------------------------------------------------------- |
+| GET    | `/api/hosts/{id}/config`                  | Current config (`ports`, `captures`, `flows`).                |
+| POST   | `/api/hosts/{id}/config`                  | Replace the whole config.                                     |
+| POST   | `/api/hosts/{id}/control/state`           | Port link up/down, capture start/stop, flow transmit start/stop. |
+| POST   | `/api/hosts/{id}/monitor/metrics`         | Port or flow metrics.                                         |
+| POST   | `/api/hosts/{id}/monitor/capture`         | Download a port's capture as pcapng (binary; stops a running capture). |
+| GET    | `/api/hosts/{id}/capabilities/version`    | API/app version.                                              |

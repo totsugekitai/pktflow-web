@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// proxyToDaemon forwards a port request to the selected host's daemon, streaming
+// proxyToDaemon forwards an OTG request to the selected host's daemon, streaming
 // the daemon's status, body, and relevant headers straight back. The daemon owns
-// all port state; the backend only routes to the right endpoint.
+// all port, flow, and capture state; the backend only routes to the right host.
 func (s *Server) proxyToDaemon(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	h, ok := s.hosts.Get(id)
@@ -17,11 +17,10 @@ func (s *Server) proxyToDaemon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Everything past /api/hosts/{id} is the daemon path. EscapedPath keeps the
-	// PCI address percent-encoded exactly as the daemon expects it.
+	// Everything past /api/hosts/{id} is the daemon path (e.g. /config).
 	prefix := "/api/hosts/" + id
 	daemonPath := strings.TrimPrefix(r.URL.EscapedPath(), prefix)
-	if !strings.HasPrefix(daemonPath, "/ports") {
+	if daemonPath == r.URL.EscapedPath() || !strings.HasPrefix(daemonPath, "/") {
 		writeError(w, http.StatusInternalServerError, "could not derive daemon path")
 		return
 	}

@@ -4,10 +4,12 @@ import styles from './Modal.module.css'
 export interface ModalProps {
   title: string
   onClose: () => void
+  /** `wide` fits dense forms such as the flow editor. */
+  size?: 'normal' | 'wide'
   children: ReactNode
 }
 
-export function Modal({ title, onClose, children }: ModalProps) {
+export function Modal({ title, onClose, size = 'normal', children }: ModalProps) {
   const titleId = useId()
 
   useEffect(() => {
@@ -21,7 +23,7 @@ export function Modal({ title, onClose, children }: ModalProps) {
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div
-        className={styles.dialog}
+        className={size === 'wide' ? `${styles.dialog} ${styles.wide}` : styles.dialog}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
