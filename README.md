@@ -64,6 +64,45 @@ pnpm build       # production build
 
 See [`frontend/README.md`](frontend/README.md) for details.
 
+### Live end-to-end test
+
+`frontend/e2e/live.ts` exercises a real pktflow daemon through the backend,
+using the frontend's own API code (the same requests the UI sends). It adds
+two ports, toggles the link, captures on the Rx port, transmits fixed-count and
+continuous flows, checks the counters and the pcapng, and finally clears the
+config again.
+
+Prerequisites:
+
+- Node.js 23.6 or later (the script runs via Node's built-in TypeScript support).
+- A running pktflow daemon with an **empty** config. The test replaces the whole
+  config and clears it at the end, so it refuses to start if anything is
+  configured.
+- Two DPDK-usable ports cabled back to back (Tx → Rx loopback). The test sends
+  real traffic on them.
+- The backend running and pointing at that daemon.
+
+```sh
+# terminal 1: backend
+cd backend
+go run ./cmd/server
+
+# terminal 2: the test
+cd frontend
+E2E_TX_PCI=0000:01:00.0 E2E_RX_PCI=0000:01:00.1 pnpm e2e:live
+```
+
+| Variable          | Default                  | Purpose                                         |
+| ----------------- | ------------------------ | ----------------------------------------------- |
+| `E2E_TX_PCI`      | _(required)_             | PCI address of the transmitting port.           |
+| `E2E_RX_PCI`      | _(required)_             | PCI address of the receiving port.              |
+| `PKTFLOW_WEB_URL` | `http://127.0.0.1:8080`  | Backend origin.                                 |
+| `E2E_HOST_ID`     | `local`                  | Backend host id of the target daemon.           |
+| `E2E_PCAP_OUT`    | _(unset)_                | If set, the Rx capture is also saved to this path. |
+
+Each check prints `PASS`/`FAIL`; the exit code is 0 only when all pass (2 when
+the daemon config was not empty).
+
 ## Backend
 
 Requires Go (module targets `go 1.26.4`; with `GOTOOLCHAIN=auto` the matching

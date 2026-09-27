@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "e2e:live": "node e2e/live.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.2",
