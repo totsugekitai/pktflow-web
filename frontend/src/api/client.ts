@@ -1,8 +1,9 @@
 /**
  * Thin fetch wrapper around the pktflow-web backend API.
  * Every request is prefixed with {@link API_BASE}; the frontend talks only to
- * the backend, which forwards per-port operations to the selected daemon.
- * Every non-2xx response carries a `{ "error": "..." }` body, which is
+ * the backend, which forwards OTG calls to the selected daemon.
+ * Non-2xx responses carry either the backend's own `{ "error": "..." }` body or
+ * the daemon's OTG `{ "code", "kind", "errors": [...] }` body; both are
  * surfaced as an {@link ApiError} rather than being swallowed.
  */
 
@@ -22,19 +23,26 @@ export class ApiError extends Error {
   }
 }
 
-/** Extracts the backend's `{error}` message, falling back to the status line. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+}
+
+/** Extracts a human-readable message from a backend or OTG error body. */
+function errorBodyMessage(body: unknown): string | undefined {
+  if (!isRecord(body)) return undefined
+  if (typeof body.error === 'string') return body.error
+  if (Array.isArray(body.errors)) {
+    const messages = body.errors.filter((e): e is string => typeof e === 'string')
+    if (messages.length > 0) return messages.join('; ')
+  }
+  return undefined
+}
+
+/** Builds an {@link ApiError}, falling back to the status line for unknown bodies. */
 async function toApiError(res: Response): Promise<ApiError> {
   let message = `${res.status} ${res.statusText}`
   try {
-    const body: unknown = await res.json()
-    if (
-      body !== null &&
-      typeof body === 'object' &&
-      'error' in body &&
-      typeof (body as { error: unknown }).error === 'string'
-    ) {
-      message = (body as { error: string }).error
-    }
+    message = errorBodyMessage(await res.json()) ?? message
   } catch {
     // Non-JSON body (e.g. a proxy failure); keep the status-line message.
   }
@@ -67,21 +75,13 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return res.json() as Promise<T>
 }
 
-/** Performs a request expecting the backend's `{ ok: true }` acknowledgement. */
-export async function apiAck(path: string, options: RequestOptions = {}): Promise<void> {
-  await apiFetch<{ ok: true }>(path, options)
-}
-
 /** Performs a request whose success carries no body (e.g. a 204 response). */
 export async function apiVoid(path: string, options: RequestOptions = {}): Promise<void> {
   await request(path, options)
 }
 
-/** Fetches a binary body (used for pcap downloads). */
-export async function apiBlob(path: string): Promise<Blob> {
-  const res = await fetch(`${API_BASE}${path}`)
-  if (!res.ok) {
-    throw await toApiError(res)
-  }
+/** Performs a request and returns the binary body (used for pcap downloads). */
+export async function apiBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
+  const res = await request(path, options)
   return res.blob()
 }

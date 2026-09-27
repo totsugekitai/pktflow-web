@@ -64,6 +64,45 @@ pnpm build       # production build
 
 See [`frontend/README.md`](frontend/README.md) for details.
 
+### Live end-to-end test
+
+`frontend/e2e/live.ts` exercises a real pktflow daemon through the backend,
+using the frontend's own API code (the same requests the UI sends). It adds
+two ports, toggles the link, captures on the Rx port, transmits fixed-count and
+continuous flows, checks the counters and the pcapng, and finally clears the
+config again.
+
+Prerequisites:
+
+- Node.js 23.6 or later (the script runs via Node's built-in TypeScript support).
+- A running pktflow daemon with an **empty** config. The test replaces the whole
+  config and clears it at the end, so it refuses to start if anything is
+  configured.
+- Two DPDK-usable ports cabled back to back (Tx → Rx loopback). The test sends
+  real traffic on them.
+- The backend running and pointing at that daemon.
+
+```sh
+# terminal 1: backend
+cd backend
+go run ./cmd/server
+
+# terminal 2: the test
+cd frontend
+E2E_TX_PCI=0000:01:00.0 E2E_RX_PCI=0000:01:00.1 pnpm e2e:live
+```
+
+| Variable          | Default                  | Purpose                                         |
+| ----------------- | ------------------------ | ----------------------------------------------- |
+| `E2E_TX_PCI`      | _(required)_             | PCI address of the transmitting port.           |
+| `E2E_RX_PCI`      | _(required)_             | PCI address of the receiving port.              |
+| `PKTFLOW_WEB_URL` | `http://127.0.0.1:8080`  | Backend origin.                                 |
+| `E2E_HOST_ID`     | `local`                  | Backend host id of the target daemon.           |
+| `E2E_PCAP_OUT`    | _(unset)_                | If set, the Rx capture is also saved to this path. |
+
+Each check prints `PASS`/`FAIL`; the exit code is 0 only when all pass (2 when
+the daemon config was not empty).
+
 ## Backend
 
 Requires Go (module targets `go 1.26.4`; with `GOTOOLCHAIN=auto` the matching
@@ -86,8 +125,9 @@ Configuration (environment variables):
 
 ### Endpoints
 
-All application routes are served under `/api`. Errors use the daemon-compatible
-`{"error": "..."}` shape.
+All application routes are served under `/api`. Errors raised by the backend
+itself use the `{"error": "..."}` shape; errors from the daemon are passed through
+in the OTG `{"code", "kind", "errors": [...]}` shape.
 
 **Health**
 
@@ -104,21 +144,18 @@ built-in `local` host is seeded at startup and cannot be removed.
 | POST   | `/api/hosts`       | Add a host. Body `{label, address}`; returns the created host (201). |
 | DELETE | `/api/hosts/{id}`  | Remove a host (204). The built-in `local` host is rejected (400).  |
 
-**Ports** — forwarded verbatim to the selected host's daemon, which owns all port
-state. `{pci}` is the port's PCI address (e.g. `0000:02:00.0`). See the daemon
-REST API at `pktflow/doc/daemon_api.md` for request and
-response bodies.
+**Open Traffic Generator (OTG)** — forwarded verbatim to the selected host's
+daemon, which implements a subset of the
+[OTG REST API](https://github.com/open-traffic-generator/models) and owns all
+port, flow, and capture state. `/api/hosts/{id}/<path>` maps to the daemon's
+`<path>`. See `pktflow/src/daemon/otg/model.rs` for the supported fields and
+`pktflow/TODO.md` for the parts of the spec that are not implemented.
 
-| Method | Path                                        | Description                          |
-| ------ | ------------------------------------------- | ------------------------------------ |
-| GET    | `/api/hosts/{id}/ports`                     | List the host's ports.               |
-| POST   | `/api/hosts/{id}/ports`                     | Add a port.                          |
-| DELETE | `/api/hosts/{id}/ports/{pci}`               | Remove a port.                       |
-| PUT    | `/api/hosts/{id}/ports/{pci}/mode`          | Change the port mode.                |
-| POST   | `/api/hosts/{id}/ports/{pci}/tx/start`      | Start transmit.                      |
-| POST   | `/api/hosts/{id}/ports/{pci}/tx/stop`       | Stop transmit.                       |
-| POST   | `/api/hosts/{id}/ports/{pci}/rx/start`      | Start receive.                       |
-| POST   | `/api/hosts/{id}/ports/{pci}/rx/stop`       | Stop receive.                        |
-| POST   | `/api/hosts/{id}/ports/{pci}/pcap/start`    | Start capture.                       |
-| POST   | `/api/hosts/{id}/ports/{pci}/pcap/stop`     | Stop capture.                        |
-| GET    | `/api/hosts/{id}/ports/{pci}/pcap`          | Download the finished capture (binary). |
+| Method | Path                                      | Description                                                   |
+| ------ | ----------------------------------------- | ------------------------------------------------------------- |
+| GET    | `/api/hosts/{id}/config`                  | Current config (`ports`, `captures`, `flows`).                |
+| POST   | `/api/hosts/{id}/config`                  | Replace the whole config.                                     |
+| POST   | `/api/hosts/{id}/control/state`           | Port link up/down, capture start/stop, flow transmit start/stop. |
+| POST   | `/api/hosts/{id}/monitor/metrics`         | Port or flow metrics.                                         |
+| POST   | `/api/hosts/{id}/monitor/capture`         | Download a port's capture as pcapng (binary; stops a running capture). |
+| GET    | `/api/hosts/{id}/capabilities/version`    | API/app version.                                              |

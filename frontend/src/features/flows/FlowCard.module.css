@@ -26,49 +26,31 @@
   font-size: 1.05rem;
 }
 
-.pci {
-  font-size: 0.85rem;
-  color: #6b7280;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.queues {
+.details {
   margin: 0;
-  font-size: 0.75rem;
-  color: #6b7280;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.linkDot {
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.linkUp {
-  background-color: #22c55e;
-}
-
-.linkDown {
-  background-color: #ef4444;
-}
-
-.linkUnknown {
-  background-color: #9ca3af;
-}
-
-.badges {
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
 }
 
-.badgeLabel {
-  font-size: 0.75rem;
+.detail {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.detail dt {
+  width: 4.5rem;
+  flex-shrink: 0;
   font-weight: 600;
   color: #6b7280;
-  width: 4rem;
+}
+
+.detail dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .controls {

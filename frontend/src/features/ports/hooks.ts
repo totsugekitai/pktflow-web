@@ -1,150 +1,78 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  addPort,
-  downloadPcap,
-  getStats,
-  listPorts,
-  removePort,
-  setMode,
-  startPcap,
-  startRx,
-  startTx,
-  stopPcap,
-  stopRx,
-  stopTx,
-} from '../../api/ports.ts'
-import type { AddPortRequest, PortMode, Stream } from '../../api/types.ts'
+import { getCapture, getPortMetrics, setControlState, updateConfig } from '../../api/otg.ts'
+import type { Port } from '../../api/types.ts'
+import { addPort, ensureCapture, removePort } from '../../otg/configOps.ts'
 import { toast } from '../../stores/toastStore.ts'
+import {
+  errorMessage,
+  metricsKey,
+  POLL_INTERVAL_MS,
+  useOtgAction,
+} from '../config/hooks.ts'
 import { useActiveHostId } from '../hosts/hooks.ts'
 
-/** Port queries are keyed per host so switching hosts refetches cleanly. */
-function portsKey(hostId: string | null) {
-  return ['ports', hostId] as const
-}
-
-/** Stats are keyed per host and port so each card polls independently. */
-function statsKey(hostId: string | null, pci: string) {
-  return ['ports', hostId, pci, 'stats'] as const
-}
-
-/** How often the port list is refetched while the page is open. */
-const POLL_INTERVAL_MS = 2000
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-/** Live list of ports for the active host, polled so running-state changes appear. */
-export function usePorts() {
+/** Live metrics of every port on the active host. */
+export function usePortMetrics() {
   const hostId = useActiveHostId()
   return useQuery({
-    queryKey: portsKey(hostId),
-    queryFn: () => listPorts(hostId!),
+    queryKey: metricsKey(hostId, 'port'),
+    queryFn: () => getPortMetrics(hostId!),
     enabled: hostId !== null,
     refetchInterval: POLL_INTERVAL_MS,
   })
 }
 
-/**
- * Live hw/sw counters for one port, polled while `enabled` (i.e. the stats
- * section is open). Kept separate from the port list so a closed card does no
- * extra fetching.
- */
-export function usePortStats(pci: string, enabled: boolean) {
-  const hostId = useActiveHostId()
-  return useQuery({
-    queryKey: statsKey(hostId, pci),
-    queryFn: () => getStats(hostId!, pci),
-    enabled: enabled && hostId !== null,
-    refetchInterval: POLL_INTERVAL_MS,
-  })
-}
-
-/**
- * Wraps a port action so success refreshes the port list and both outcomes
- * surface a toast — no result is silently dropped. The active host is injected,
- * so callers only pass the port-specific arguments.
- */
-function usePortAction<TArgs>(
-  action: (hostId: string, args: TArgs) => Promise<void>,
-  successMessage: (args: TArgs) => string,
-) {
-  const queryClient = useQueryClient()
-  const hostId = useActiveHostId()
-  return useMutation({
-    mutationFn: (args: TArgs) => {
-      if (hostId === null) return Promise.reject(new Error('No host selected'))
-      return action(hostId, args)
-    },
-    onSuccess: (_result, args) => {
-      toast.success(successMessage(args))
-      void queryClient.invalidateQueries({ queryKey: portsKey(hostId) })
-    },
-    onError: (error) => toast.error(errorMessage(error)),
-  })
-}
-
 export function useAddPort() {
-  return usePortAction(
-    (hostId, req: AddPortRequest) => addPort(hostId, req),
-    (req) => `Added port ${req.pci}`,
+  return useOtgAction(
+    (hostId, port: Port) => updateConfig(hostId, (c) => addPort(c, port)),
+    (port) => `Added port ${port.name}`,
   )
 }
 
 export function useRemovePort() {
-  return usePortAction(
-    (hostId, pci: string) => removePort(hostId, pci),
-    (pci) => `Removed port ${pci}`,
+  return useOtgAction(
+    (hostId, name: string) => updateConfig(hostId, (c) => removePort(c, name)),
+    (name) => `Removed port ${name}`,
   )
 }
 
-export function useSetMode() {
-  return usePortAction(
-    (hostId, { pci, mode }: { pci: string; mode: PortMode }) => setMode(hostId, pci, mode),
-    ({ pci }) => `Updated mode for ${pci}`,
+export function useSetLink() {
+  return useOtgAction(
+    (hostId, { name, up }: { name: string; up: boolean }) =>
+      setControlState(hostId, {
+        choice: 'port',
+        port: { choice: 'link', link: { port_names: [name], state: up ? 'up' : 'down' } },
+      }),
+    ({ name, up }) => `Link ${up ? 'up' : 'down'} on ${name}`,
   )
 }
 
-export function useStartTx() {
-  return usePortAction(
-    (hostId, { pci, streams }: { pci: string; streams: Stream[] }) =>
-      startTx(hostId, pci, streams),
-    ({ pci }) => `Tx started on ${pci}`,
+/**
+ * Starts a capture, first adding a capture entry to the config if none covers
+ * the port yet (the daemon only captures on configured capture ports).
+ */
+export function useStartCapture() {
+  return useOtgAction(
+    async (hostId, name: string) => {
+      const configWarnings = await updateConfig(hostId, (c) => ensureCapture(c, name))
+      const stateWarnings = await setControlState(hostId, {
+        choice: 'port',
+        port: { choice: 'capture', capture: { port_names: [name], state: 'start' } },
+      })
+      return [...configWarnings, ...stateWarnings]
+    },
+    (name) => `Capture started on ${name}`,
   )
 }
 
-export function useStopTx() {
-  return usePortAction(
-    (hostId, pci: string) => stopTx(hostId, pci),
-    (pci) => `Tx stopped on ${pci}`,
-  )
-}
-
-export function useStartRx() {
-  return usePortAction(
-    (hostId, pci: string) => startRx(hostId, pci),
-    (pci) => `Rx started on ${pci}`,
-  )
-}
-
-export function useStopRx() {
-  return usePortAction(
-    (hostId, pci: string) => stopRx(hostId, pci),
-    (pci) => `Rx stopped on ${pci}`,
-  )
-}
-
-export function useStartPcap() {
-  return usePortAction(
-    (hostId, pci: string) => startPcap(hostId, pci),
-    (pci) => `Capture started on ${pci}`,
-  )
-}
-
-export function useStopPcap() {
-  return usePortAction(
-    (hostId, pci: string) => stopPcap(hostId, pci),
-    (pci) => `Capture stopped on ${pci}`,
+export function useStopCapture() {
+  return useOtgAction(
+    (hostId, name: string) =>
+      setControlState(hostId, {
+        choice: 'port',
+        port: { choice: 'capture', capture: { port_names: [name], state: 'stop' } },
+      }),
+    (name) => `Capture stopped on ${name}`,
   )
 }
 
@@ -160,18 +88,25 @@ function saveBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url)
 }
 
-/** Fetches a finished capture for the active host and saves it as `<pci>.pcapng`. */
-export function useDownloadPcap() {
+/**
+ * Fetches the port's latest capture and saves it as `<port>.pcapng`. The daemon
+ * stops a running capture first, so metrics are refreshed afterwards.
+ */
+export function useDownloadCapture() {
+  const queryClient = useQueryClient()
   const hostId = useActiveHostId()
   return useMutation({
-    mutationFn: (pci: string) => {
+    mutationFn: (name: string) => {
       if (hostId === null) return Promise.reject(new Error('No host selected'))
-      return downloadPcap(hostId, pci)
+      return getCapture(hostId, name)
     },
-    onSuccess: (blob, pci) => {
-      saveBlob(blob, `${pci}.pcapng`)
-      toast.success(`Downloaded capture for ${pci}`)
+    onSuccess: (blob, name) => {
+      saveBlob(blob, `${name}.pcapng`)
+      toast.success(`Downloaded capture for ${name}`)
     },
     onError: (error) => toast.error(errorMessage(error)),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: metricsKey(hostId) })
+    },
   })
 }

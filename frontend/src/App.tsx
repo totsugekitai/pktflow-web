@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { FlowList } from './features/flows/FlowList.tsx'
 import { PortList } from './features/ports/PortList.tsx'
 import { HostSelector } from './features/hosts/HostSelector.tsx'
 import { HostManager } from './features/hosts/HostManager.tsx'
@@ -18,6 +19,7 @@ export function App() {
       </header>
       <main className={styles.main}>
         <PortList />
+        <FlowList />
       </main>
       {manageOpen && (
         <Modal title="Manage hosts" onClose={() => setManageOpen(false)}>
